@@ -1,0 +1,39 @@
+{
+  "name": "mssql-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for Microsoft SQL Server database interactions",
+  "author": "Your Name",
+  "license": "MIT",
+  "runtime": "node",
+  "command": "node",
+  "args": ["build/index.js"],
+  "env": {
+    "NODE_ENV": "production"
+  },
+  "tools": [
+    {
+      "name": "execute_query",
+      "description": "Execute SQL queries with safety validation"
+    },
+    {
+      "name": "execute_procedure", 
+      "description": "Execute stored procedures with parameters"
+    },
+    {
+      "name": "get_schema",
+      "description": "Get detailed schema information for tables"
+    },
+    {
+      "name": "list_tables",
+      "description": "List all tables in the database"
+    },
+    {
+      "name": "get_database_metadata",
+      "description": "Get comprehensive database metadata"
+    },
+    {
+      "name": "validate_query",
+      "description": "Validate SQL queries for safety"
+    }
+  ]
+}
