@@ -1,31 +1,42 @@
 {
-  "name": "@whmpro/mssql-mcp",
+  "name": "mysql-mcp",
   "version": "1.0.0",
-  "description": "MCP server for Microsoft SQL Server database interactions",
+  "description": "MCP server for MySQL database interactions",
   "main": "build/index.js",
   "bin": {
-    "@whmpro/mssql-mcp": "./build/index.js"
+    "@ahmustufa/mysql-mcp": "./build/index.js",
+    "mysql-mcp": "build/index.js"
   },
   "scripts": {
     "build": "tsc",
     "start": "node build/index.js",
-    "dev": "ts-node src/index.ts",
+    "dev": "tsx watch src/index.ts",
     "watch": "tsc --watch",
     "clean": "rm -rf build"
   },
-  "keywords": ["mcp", "mssql", "database", "llm"],
-  "author": "Waseem Hussain",
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "mcp",
+    "mysql",
+    "database",
+    "llm"
+  ],
+  "author": "Ahmed Mustufa Malik",
   "license": "Apache-2.0",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^0.6.1",
-    "mssql": "^11.0.1",
-    "dotenv": "^17.2.0"
+    "@modelcontextprotocol/sdk": "^1.19.1",
+    "dotenv": "^17.2.0",
+    "express": "^5.1.0",
+    "mysql2": "^3.15.2"
   },
   "devDependencies": {
-    "@types/node": "^20.10.0",
+    "@types/express": "^5.0.3",
     "@types/mssql": "^9.1.5",
-    "typescript": "^5.3.0",
-    "ts-node": "^10.9.0"
+    "@types/node": "^20.10.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.3.0"
   },
   "engines": {
     "node": ">=18.0.0"

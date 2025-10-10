@@ -1,8 +1,8 @@
 {
-  "name": "mssql-mcp",
+  "name": "mysql-mcp",
   "version": "1.0.0",
-  "description": "MCP server for Microsoft SQL Server database interactions",
-  "author": "Your Name",
+  "description": "MCP server for MySQL database interactions",
+  "author": "Ahmed Mustufa Malik",
   "license": "MIT",
   "runtime": "node",
   "command": "node",
@@ -16,7 +16,7 @@
       "description": "Execute SQL queries with safety validation"
     },
     {
-      "name": "execute_procedure", 
+      "name": "execute_procedure",
       "description": "Execute stored procedures with parameters"
     },
     {

@@ -1,271 +1,232 @@
 #!/usr/bin/env node
+import "dotenv/config";
 
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-  Tool,
-} from '@modelcontextprotocol/sdk/types.js';
-import sql from 'mssql';
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { z } from "zod";
+import mysql from "mysql2/promise";
 
-// Database configuration from environment variables
-const dbConfig: sql.config = {
-  server: process.env.MSSQL_SERVER || 'localhost',
-  database: process.env.MSSQL_DATABASE || 'master',
-  user: process.env.MSSQL_USERNAME || 'sa',
-  password: process.env.MSSQL_PASSWORD || '',
-  port: parseInt(process.env.MSSQL_PORT || '1433'),
-  options: {
-    encrypt: process.env.MSSQL_ENCRYPT === 'true',
-    trustServerCertificate: process.env.MSSQL_TRUST_SERVER_CERTIFICATE === 'true',
-  },
-};
-
-// Validate required environment variables
-if (!process.env.MSSQL_SERVER || !process.env.MSSQL_DATABASE || !process.env.MSSQL_USERNAME || !process.env.MSSQL_PASSWORD) {
-  console.error('Missing required environment variables: MSSQL_SERVER, MSSQL_DATABASE, MSSQL_USERNAME, MSSQL_PASSWORD');
-  process.exit(1);
+// ---------- logging ----------
+function log(
+  level: "INFO" | "ERROR" | "DEBUG" | "WARN",
+  message: string,
+  data?: unknown
+) {
+  const ts = new Date().toISOString();
+  const line = `[${ts}] [${level}] ${message}`;
+  if (data !== undefined) {
+    console.error(`${line}\n${JSON.stringify(data, null, 2)}`);
+  } else {
+    console.error(line);
+  }
 }
 
-const server = new Server(
-  {
-    name: 'mssql-mcp',
-    version: '1.0.0',
-  },
-  {
-    capabilities: {
-      tools: {},
-    },
-  }
-);
+// ---------- env / config ----------
+const requiredEnv = z.object({
+  DB_SERVER: z.string().min(1),
+  DB_DATABASE: z.string().min(1),
+  DB_USER: z.string().min(1),
+  DB_PASSWORD: z.string().min(1),
+});
+const optionalEnv = z.object({
+  DB_PORT: z.string().optional(),
+  DB_SSL: z.string().optional(),
+});
 
-// Database connection pool
-let pool: sql.ConnectionPool | null = null;
+const okRequired = requiredEnv.safeParse(process.env);
+if (!okRequired.success) {
+  log(
+    "ERROR",
+    "Missing required env: DB_SERVER, DB_DATABASE, DB_USER, DB_PASSWORD"
+  );
+  process.exit(1);
+}
+const opt = optionalEnv.parse(process.env);
 
-async function getConnection(): Promise<sql.ConnectionPool> {
+const dbConfig = {
+  host: process.env.DB_SERVER!,
+  database: process.env.DB_DATABASE!,
+  user: process.env.DB_USER!,
+  password: process.env.DB_PASSWORD!,
+  port: parseInt(opt.DB_PORT || "3306", 10),
+  // For AWS RDS MySQL, SSL often needs to be enabled; `mysql2` supports `ssl: 'Amazon RDS'`.
+  ssl: process.env.DB_SSL === "false" ? undefined : "Amazon RDS",
+  connectTimeout: 60_000,
+};
+
+log("INFO", "Starting MCP (STDIO) with DB config (sans password):", {
+  host: dbConfig.host,
+  database: dbConfig.database,
+  user: dbConfig.user,
+  port: dbConfig.port,
+  ssl: !!dbConfig.ssl,
+});
+
+// ---------- DB pool ----------
+let pool: mysql.Pool | null = null;
+async function getPool(): Promise<mysql.Pool> {
   if (!pool) {
-    pool = new sql.ConnectionPool(dbConfig);
-    await pool.connect();
+    log("INFO", "Creating MySQL pool…");
+    pool = mysql.createPool(dbConfig as mysql.PoolOptions);
+    // smoke test:
+    const [rows] = await pool.query("SELECT 1 AS ok");
+    log("INFO", "DB test ok", rows);
   }
   return pool;
 }
 
-// Tools definition
-const tools: Tool[] = [
-  {
-    name: 'execute_query',
-    description: 'Execute a SQL query on the MSSQL database',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        query: {
-          type: 'string',
-          description: 'The SQL query to execute',
-        },
-      },
-      required: ['query'],
-    },
-  },
-  {
-    name: 'list_tables',
-    description: 'List all tables in the current database',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-    },
-  },
-  {
-    name: 'describe_table',
-    description: 'Get the schema/structure of a specific table',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        table_name: {
-          type: 'string',
-          description: 'The name of the table to describe',
-        },
-      },
-      required: ['table_name'],
-    },
-  },
-  {
-    name: 'get_table_data',
-    description: 'Get sample data from a table (limited to 100 rows)',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        table_name: {
-          type: 'string',
-          description: 'The name of the table to get data from',
-        },
-        limit: {
-          type: 'number',
-          description: 'Number of rows to return (default: 10, max: 100)',
-          default: 10,
-        },
-      },
-      required: ['table_name'],
-    },
-  },
-];
-
-// List tools handler
-server.setRequestHandler(ListToolsRequestSchema, async () => {
-  return {
-    tools,
-  };
+// ---------- MCP server ----------
+const server = new McpServer({
+  name: "mysql-mcp",
+  version: "1.1.0",
 });
 
-// Tool execution handler
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  const { name, arguments: args } = request.params;
-
-  try {
-    const connection = await getConnection();
-
-    switch (name) {
-      case 'execute_query': {
-        const { query } = args as { query: string };
-        
-        // Basic safety check for destructive operations
-        const upperQuery = query.toUpperCase().trim();
-        if (upperQuery.startsWith('DROP') || upperQuery.startsWith('DELETE') || upperQuery.startsWith('TRUNCATE')) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: 'Error: Destructive operations (DROP, DELETE, TRUNCATE) are not allowed for safety reasons.',
-              },
-            ],
-          };
-        }
-
-        const result = await connection.request().query(query);
-        
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Query executed successfully.\nRows affected: ${result.rowsAffected}\nResults:\n${JSON.stringify(result.recordset, null, 2)}`,
-            },
-          ],
-        };
-      }
-
-      case 'list_tables': {
-        const result = await connection.request().query(`
-          SELECT 
-            TABLE_NAME,
-            TABLE_SCHEMA,
-            TABLE_TYPE
-          FROM INFORMATION_SCHEMA.TABLES
-          WHERE TABLE_TYPE = 'BASE TABLE'
-          ORDER BY TABLE_SCHEMA, TABLE_NAME
-        `);
-
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Tables in database:\n${JSON.stringify(result.recordset, null, 2)}`,
-            },
-          ],
-        };
-      }
-
-      case 'describe_table': {
-        const { table_name } = args as { table_name: string };
-        
-        const result = await connection.request()
-          .input('table_name', sql.VarChar, table_name)
-          .query(`
-            SELECT 
-              COLUMN_NAME,
-              DATA_TYPE,
-              IS_NULLABLE,
-              COLUMN_DEFAULT,
-              CHARACTER_MAXIMUM_LENGTH,
-              NUMERIC_PRECISION,
-              NUMERIC_SCALE
-            FROM INFORMATION_SCHEMA.COLUMNS
-            WHERE TABLE_NAME = @table_name
-            ORDER BY ORDINAL_POSITION
-          `);
-
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Schema for table '${table_name}':\n${JSON.stringify(result.recordset, null, 2)}`,
-            },
-          ],
-        };
-      }
-
-      case 'get_table_data': {
-        const { table_name, limit = 10 } = args as { table_name: string; limit?: number };
-        const safeLimit = Math.min(Math.max(1, limit), 100);
-        
-        const result = await connection.request()
-          .input('table_name', sql.VarChar, table_name)
-          .query(`SELECT TOP ${safeLimit} * FROM [${table_name}]`);
-
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Sample data from table '${table_name}' (${safeLimit} rows):\n${JSON.stringify(result.recordset, null, 2)}`,
-            },
-          ],
-        };
-      }
-
-      default:
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Unknown tool: ${name}`,
-            },
-          ],
-        };
+// execute_query
+server.registerTool(
+  "execute_query",
+  {
+    title: "Execute SQL",
+    description: "Execute a SQL query on the MySQL database (read-focused)",
+    inputSchema: { query: z.string().min(1) },
+  },
+  async ({ query }: { query: string }) => {
+    const upper = query.trim().toUpperCase();
+    if (
+      upper.startsWith("DROP") ||
+      upper.startsWith("DELETE") ||
+      upper.startsWith("TRUNCATE")
+    ) {
+      log("WARN", "Destructive operation blocked", { query });
+      return {
+        content: [
+          {
+            type: "text",
+            text: "Error: Destructive operations (DROP/DELETE/TRUNCATE) are not allowed.",
+          },
+        ],
+        isError: true,
+      };
     }
-  } catch (error) {
+
+    const p = await getPool();
+    log("DEBUG", "Executing query", { query });
+    const [rows] = await p.query(query);
+    log("INFO", "Query executed", {
+      rows: Array.isArray(rows) ? rows.length : 0,
+    });
+
     return {
       content: [
         {
-          type: 'text',
-          text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+          type: "text",
+          text: JSON.stringify(rows, null, 2),
         },
       ],
     };
   }
-});
+);
 
-// Start the server
-async function main() {
+// list_tables
+server.registerTool(
+  "list_tables",
+  {
+    title: "List Tables",
+    description: "List all base tables in the current database",
+    inputSchema: {},
+  },
+  async () => {
+    const p = await getPool();
+    const [rows] = await p.query(
+      `
+      SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_TYPE
+      FROM INFORMATION_SCHEMA.TABLES
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_TYPE = 'BASE TABLE'
+      ORDER BY TABLE_NAME
+      `
+    );
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(rows, null, 2),
+        },
+      ],
+    };
+  }
+);
+
+// describe_table
+server.registerTool(
+  "describe_table",
+  {
+    title: "Describe Table",
+    description: "Get the schema of a table",
+    inputSchema: { table_name: z.string().min(1) },
+  },
+  async ({ table_name }: { table_name: string }) => {
+    const p = await getPool();
+    const [rows] = await p.query(
+      `
+      SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, COLUMN_DEFAULT, CHARACTER_MAXIMUM_LENGTH,
+             NUMERIC_PRECISION, NUMERIC_SCALE
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?
+      ORDER BY ORDINAL_POSITION
+      `,
+      [table_name]
+    );
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(rows, null, 2),
+        },
+      ],
+    };
+  }
+);
+
+// get_table_data
+server.registerTool(
+  "get_table_data",
+  {
+    title: "Get Table Data",
+    description: "Return sample rows from a table",
+    inputSchema: {
+      table_name: z.string().min(1),
+      limit: z.number().int().min(1).max(100).default(10).optional(),
+    },
+  },
+  async ({
+    table_name,
+    limit = 10,
+  }: {
+    table_name: string;
+    limit?: number | undefined;
+  }) => {
+    const p = await getPool();
+    const safe = Math.min(Math.max(1, limit), 100);
+    const [rows] = await p.query(`SELECT * FROM \`${table_name}\` LIMIT ?`, [
+      safe,
+    ]);
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(rows, null, 2),
+        },
+      ],
+    };
+  }
+);
+
+// ---------- STDIO transport ----------
+(async () => {
+  await getPool(); // early DB test for fast failures
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error('MSSQL MCP server running on stdio');
-}
-
-// Handle graceful shutdown
-process.on('SIGINT', async () => {
-  if (pool) {
-    await pool.close();
-  }
-  process.exit(0);
-});
-
-process.on('SIGTERM', async () => {
-  if (pool) {
-    await pool.close();
-  }
-  process.exit(0);
-});
-
-main().catch((error) => {
-  console.error('Fatal error:', error);
+  // No HTTP server; process stays alive while stdio session is open.
+})().catch((e) => {
+  log("ERROR", "Fatal startup", e);
   process.exit(1);
 });
