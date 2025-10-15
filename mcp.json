@@ -1,9 +1,9 @@
 {
   "name": "mysql-mcp",
-  "version": "1.0.0",
-  "description": "MCP server for MySQL database interactions",
+  "version": "1.1.0",
+  "description": "MCP server for MySQL database interactions with enhanced security and scalability",
   "author": "Ahmed Mustufa Malik",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "runtime": "node",
   "command": "node",
   "args": ["build/index.js"],
@@ -13,27 +13,37 @@
   "tools": [
     {
       "name": "execute_query",
-      "description": "Execute SQL queries with safety validation"
-    },
-    {
-      "name": "execute_procedure",
-      "description": "Execute stored procedures with parameters"
-    },
-    {
-      "name": "get_schema",
-      "description": "Get detailed schema information for tables"
+      "description": "Execute SQL queries with built-in safety validation and injection protection"
     },
     {
       "name": "list_tables",
-      "description": "List all tables in the database"
+      "description": "List all base tables in the current database with schema information"
     },
     {
-      "name": "get_database_metadata",
-      "description": "Get comprehensive database metadata"
+      "name": "describe_table",
+      "description": "Get detailed schema information for a specific table including columns, types, and constraints"
     },
     {
-      "name": "validate_query",
-      "description": "Validate SQL queries for safety"
+      "name": "get_table_data",
+      "description": "Retrieve sample data from a table with configurable row limits"
     }
-  ]
+  ],
+  "capabilities": {
+    "database": {
+      "type": "mysql",
+      "version": "8.0+",
+      "ssl_support": true,
+      "connection_pooling": true
+    },
+    "security": {
+      "sql_injection_protection": true,
+      "read_only_default": true,
+      "query_validation": true
+    },
+    "scalability": {
+      "docker_support": true,
+      "aws_rds_compatible": true,
+      "connection_pooling": true
+    }
+  }
 }

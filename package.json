@@ -1,5 +1,5 @@
 {
-  "name": "mysql-mcp",
+  "name": "@ahmedmustafamalik/mysql-mcp",
   "version": "1.0.0",
   "description": "MCP server for MySQL database interactions",
   "main": "build/index.js",
@@ -12,7 +12,14 @@
     "start": "node build/index.js",
     "dev": "tsx watch src/index.ts",
     "watch": "tsc --watch",
-    "clean": "rm -rf build"
+    "clean": "rm -rf build",
+    "docker:build": "docker build -t mysql-mcp .",
+    "docker:run": "docker run --env-file .env mysql-mcp",
+    "docker:compose": "docker-compose up -d",
+    "docker:logs": "docker-compose logs -f mysql-mcp",
+    "docker:stop": "docker-compose down",
+    "docker:clean": "docker-compose down -v",
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "publishConfig": {
     "access": "public"
@@ -28,14 +35,12 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.19.1",
     "dotenv": "^17.2.0",
-    "express": "^5.1.0",
-    "mysql2": "^3.15.2"
+    "mysql2": "^3.15.2",
+    "zod": "^3.22.0"
   },
   "devDependencies": {
-    "@types/express": "^5.0.3",
-    "@types/mssql": "^9.1.5",
     "@types/node": "^20.10.0",
-    "ts-node": "^10.9.0",
+    "tsx": "^4.6.0",
     "typescript": "^5.3.0"
   },
   "engines": {
