@@ -186,6 +186,35 @@ server.registerTool(
   }
 );
 
+// Primary keys for a table
+server.registerTool(
+  "primary_keys",
+  {
+    title: "Primary Keys",
+    description: "Get primary key column(s) for a table.",
+    inputSchema: { table_name: z.string().min(1) },
+  },
+  async ({ table_name }) => {
+    const p = await getPool();
+    const [rows] = await p.query(
+      `
+      SELECT k.COLUMN_NAME
+      FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS t
+      JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE k
+        ON t.CONSTRAINT_NAME = k.CONSTRAINT_NAME
+       AND t.TABLE_SCHEMA = k.TABLE_SCHEMA
+       AND t.TABLE_NAME = k.TABLE_NAME
+      WHERE t.TABLE_SCHEMA = DATABASE()
+        AND t.TABLE_NAME = ?
+        AND t.CONSTRAINT_TYPE = 'PRIMARY KEY'
+      ORDER BY k.ORDINAL_POSITION
+      `,
+      [table_name]
+    );
+    return { content: [{ type: "text", text: JSON.stringify(rows, null, 2) }] };
+  }
+);
+
 // get_table_data
 server.registerTool(
   "get_table_data",
@@ -217,6 +246,128 @@ server.registerTool(
         },
       ],
     };
+  }
+);
+
+server.registerTool(
+  "search_columns",
+  {
+    title: "Search Columns",
+    description: "Find columns whose names match a pattern (case-insensitive).",
+    inputSchema: { like: z.string().min(1) },
+  },
+  async ({ like }: { like: string }) => {
+    const p = await getPool();
+    const [rows] = await p.query(
+      `
+      SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE() AND COLUMN_NAME LIKE ?
+      ORDER BY TABLE_NAME, ORDINAL_POSITION
+      `,
+      [`%${like}%`]
+    );
+    return { content: [{ type: "text", text: JSON.stringify(rows, null, 2) }] };
+  }
+);
+
+// Foreign keys in/out of a table
+server.registerTool(
+  "foreign_keys",
+  {
+    title: "Foreign Keys",
+    description: "List foreign keys referencing or referenced by a table.",
+    inputSchema: { table_name: z.string().min(1) },
+  },
+  async ({ table_name }: { table_name: string }) => {
+    const p = await getPool();
+    const [rows] = await p.query(
+      `
+      SELECT kcu.TABLE_NAME,
+             kcu.COLUMN_NAME,
+             kcu.REFERENCED_TABLE_NAME,
+             kcu.REFERENCED_COLUMN_NAME,
+             kcu.CONSTRAINT_NAME
+      FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
+      WHERE kcu.TABLE_SCHEMA = DATABASE()
+        AND (kcu.TABLE_NAME = ? OR kcu.REFERENCED_TABLE_NAME = ?)
+        AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
+      ORDER BY kcu.TABLE_NAME, kcu.COLUMN_NAME
+      `,
+      [table_name, table_name]
+    );
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(rows, null, 2),
+        },
+      ],
+    };
+  }
+);
+
+// One-shot snapshot the whole schema (tables, columns, PKs, FKs)
+server.registerTool(
+  "introspect_schema",
+  {
+    title: "Introspect Schema",
+    description: "Return a compact JSON map of tables → columns, PKs, and FKs.",
+    inputSchema: {},
+  },
+  async () => {
+    const p = await getPool();
+    const [tables] = await p.query(`
+      SELECT TABLE_NAME
+      FROM INFORMATION_SCHEMA.TABLES
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_TYPE='BASE TABLE'
+      ORDER BY TABLE_NAME
+    `);
+
+    const [cols] = await p.query(`
+      SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE, IS_NULLABLE
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+      ORDER BY TABLE_NAME, ORDINAL_POSITION
+    `);
+
+    const [pks] = await p.query(`
+      SELECT k.TABLE_NAME, k.COLUMN_NAME
+      FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS t
+      JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE k
+        ON t.CONSTRAINT_NAME = k.CONSTRAINT_NAME
+       AND t.TABLE_SCHEMA = k.TABLE_SCHEMA
+       AND t.TABLE_NAME = k.TABLE_NAME
+      WHERE t.TABLE_SCHEMA = DATABASE() AND t.CONSTRAINT_TYPE='PRIMARY KEY'
+    `);
+
+    const [fks] = await p.query(`
+      SELECT kcu.TABLE_NAME, kcu.COLUMN_NAME,
+             kcu.REFERENCED_TABLE_NAME, kcu.REFERENCED_COLUMN_NAME
+      FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
+      WHERE kcu.TABLE_SCHEMA = DATABASE()
+        AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
+    `);
+
+    // Build a compact map
+    const map: any = {};
+    for (const t of tables as any[])
+      map[t.TABLE_NAME] = { columns: [], pk: [], fks: [] };
+    for (const c of cols as any[])
+      map[c.TABLE_NAME]?.columns.push({
+        name: c.COLUMN_NAME,
+        type: c.DATA_TYPE,
+        nullable: c.IS_NULLABLE === "YES",
+      });
+    for (const k of pks as any[]) map[k.TABLE_NAME]?.pk.push(k.COLUMN_NAME);
+    for (const fk of fks as any[])
+      map[fk.TABLE_NAME]?.fks.push({
+        column: fk.COLUMN_NAME,
+        refTable: fk.REFERENCED_TABLE_NAME,
+        refColumn: fk.REFERENCED_COLUMN_NAME,
+      });
+
+    return { content: [{ type: "text", text: JSON.stringify(map, null, 2) }] };
   }
 );
 
