@@ -109,33 +109,37 @@ npm run docker:clean
 
 ## 🧪 Testing the Setup
 
-Once running, you can test the MCP tools:
+Once running, you can test the MCP server through the Model Context Protocol interface. The server uses STDIO transport, not HTTP endpoints.
 
-### 1. List Tables
+### Testing with MCP Client
 
-```bash
-# This will show all tables in your database
-curl -X POST http://localhost:3000/mcp \
-  -H "Content-Type: application/json" \
-  -d '{"tool": "list_tables"}'
-```
+To test the tools, you'll need an MCP-compatible client. Here are the available tools:
 
-### 2. Describe Table
+1. **list_tables** - Lists all tables in the database
+2. **describe_table** - Gets schema information for a table
+3. **execute_query** - Runs SQL queries (read-only operations)
+4. **get_table_data** - Retrieves sample data from a table
+5. **primary_keys** - Gets primary key columns for a table
+6. **search_columns** - Finds columns matching a pattern
+7. **foreign_keys** - Lists foreign key relationships
+8. **introspect_schema** - Gets complete database schema overview
 
-```bash
-# Get schema information for a specific table
-curl -X POST http://localhost:3000/mcp \
-  -H "Content-Type: application/json" \
-  -d '{"tool": "describe_table", "table_name": "users"}'
-```
+### Example Tool Calls
 
-### 3. Execute Query
+If you have an MCP client set up, you can test with these tool parameters:
 
-```bash
-# Run a SQL query
-curl -X POST http://localhost:3000/mcp \
-  -H "Content-Type: application/json" \
-  -d '{"tool": "execute_query", "query": "SELECT COUNT(*) as total_users FROM users"}'
+```json
+// List all tables
+{"tool": "list_tables"}
+
+// Describe a specific table
+{"tool": "describe_table", "table_name": "users"}
+
+// Execute a query
+{"tool": "execute_query", "query": "SELECT COUNT(*) as total_users FROM users"}
+
+// Get sample data
+{"tool": "get_table_data", "table_name": "users", "limit": 5}
 ```
 
 ## 🔍 Troubleshooting

@@ -182,6 +182,76 @@ Retrieve sample data from a table.
 }
 ```
 
+### 5. primary_keys
+
+Get primary key column(s) for a specific table.
+
+**Parameters:**
+
+- `table_name` (string): Name of the table
+
+**Returns:** List of primary key columns for the specified table.
+
+**Example:**
+
+```json
+{
+  "table_name": "users"
+}
+```
+
+### 6. search_columns
+
+Find columns whose names match a pattern (case-insensitive).
+
+**Parameters:**
+
+- `like` (string): Pattern to search for in column names
+
+**Returns:** List of matching columns across all tables with their data types.
+
+**Example:**
+
+```json
+{
+  "like": "email"
+}
+```
+
+### 7. foreign_keys
+
+List foreign key relationships for a table.
+
+**Parameters:**
+
+- `table_name` (string): Name of the table
+
+**Returns:** Foreign key relationships both referencing and referenced by the table.
+
+**Example:**
+
+```json
+{
+  "table_name": "posts"
+}
+```
+
+### 8. introspect_schema
+
+Get a complete schema overview of the database.
+
+**Parameters:** None
+
+**Returns:** Comprehensive JSON map of all tables with their columns, primary keys, and foreign key relationships.
+
+**Example:**
+
+```json
+{
+  "tool": "introspect_schema"
+}
+```
+
 ## Security Features
 
 - **SQL Injection Protection**: Advanced pattern detection and query validation

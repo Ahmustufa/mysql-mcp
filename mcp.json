@@ -1,6 +1,6 @@
 {
   "name": "mysql-mcp",
-  "version": "1.1.0",
+  "version": "1.2.3",
   "description": "MCP server for MySQL database interactions with enhanced security and scalability",
   "author": "Ahmed Mustufa Malik",
   "license": "Apache-2.0",
@@ -26,6 +26,22 @@
     {
       "name": "get_table_data",
       "description": "Retrieve sample data from a table with configurable row limits"
+    },
+    {
+      "name": "primary_keys",
+      "description": "Get primary key column(s) for a specific table"
+    },
+    {
+      "name": "search_columns",
+      "description": "Find columns whose names match a pattern (case-insensitive) across all tables"
+    },
+    {
+      "name": "foreign_keys",
+      "description": "List foreign key relationships referencing or referenced by a table"
+    },
+    {
+      "name": "introspect_schema",
+      "description": "Return a comprehensive JSON map of the entire database schema"
     }
   ],
   "capabilities": {
